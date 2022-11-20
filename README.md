@@ -1,2 +1,3 @@
 # node-ts-three-js--hello-cube
-Node.js, TypeScript, Three.js project template
+
+Node.js, TypeScript, Three.js Boilerplate
