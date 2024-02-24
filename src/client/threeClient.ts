@@ -1,14 +1,18 @@
+import type { Texture } from 'three';
 import {
   //ACESFilmicToneMapping,
   //AmbientLight,
   AxesHelper,
+  Box3,
   BoxGeometry,
   Color,
   DirectionalLight,
   GridHelper,
+  Group,
   //LinearEncoding,
   Mesh,
   MeshPhysicalMaterial,
+  MeshStandardMaterial,
   PerspectiveCamera,
   PCFSoftShadowMap,
   PlaneGeometry,
@@ -20,6 +24,10 @@ import {
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
+import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader';
+import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader';
 import Stats from 'three/examples/jsm/libs/stats.module';
 import { GUI } from 'dat.gui';
 
@@ -49,6 +57,8 @@ export const helloCube = (canvas: HTMLElement) => {
   camera.position.z = 8;
   const controls = new OrbitControls(camera, renderer.domElement);
 
+  const exrLoader = new EXRLoader();
+  const rgbeLoader = new RGBELoader();
   const scene = new Scene();
   scene.background = new Color(0xc0c0c0);
   const pmremGenerator = new PMREMGenerator(renderer);
@@ -88,13 +98,15 @@ export const helloCube = (canvas: HTMLElement) => {
   groundMesh.receiveShadow = true;
   scene.add(groundMesh);
 
+  const meshGroup = new Group();
+  scene.add(meshGroup);
   const geometry = new BoxGeometry(1, 1, 1);
   const material = new MeshPhysicalMaterial({ color: 0xe02020 });
   const mesh = new Mesh(geometry, material);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   mesh.position.y = 0.5;
-  scene.add(mesh);
+  meshGroup.add(mesh);
   const meshTransformControl = new TransformControls(
     camera,
     renderer.domElement
@@ -102,7 +114,7 @@ export const helloCube = (canvas: HTMLElement) => {
   meshTransformControl.addEventListener('dragging-changed', (event: any) => {
     controls.enabled = !event.value;
   });
-  meshTransformControl.attach(mesh);
+  meshTransformControl.attach(meshGroup);
   meshTransformControl.visible = false;
   scene.add(meshTransformControl);
 
@@ -137,16 +149,111 @@ export const helloCube = (canvas: HTMLElement) => {
     const deltaTimeMs = timestamp - (previousTimeStamp ?? timestamp);
     previousTimeStamp = timestamp;
     requestAnimationFrame(animate);
-    mesh.rotation.y += (((45 * Math.PI) / 180) * deltaTimeMs) / 1000;
+    meshGroup.rotation.y += (((45 * Math.PI) / 180) * deltaTimeMs) / 1000;
     controls.update();
     render();
     stats.update();
   };
 
+  const loadGLTF = async (resource: string) => {
+    const gltfLoader = new GLTFLoader();
+    const dracoLoader = new DRACOLoader();
+    dracoLoader.setDecoderPath('three/examples/jsm/libs/draco/'); // TODO
+
+    // Optional: Provide a DRACOLoader instance to decode compressed mesh data
+    // const dracoLoader = new DRACOLoader();
+    // dracoLoader.setDecoderPath( '/examples/jsm/libs/draco/' );
+    // loader.setDRACOLoader( dracoLoader );
+
+    const gltf = await gltfLoader.loadAsync(resource);
+    gltf.scene.traverse((child) => {
+      if (child instanceof Mesh) {
+        if (child.isMesh) {
+          const childMaterial = child.material;
+          if (childMaterial instanceof MeshStandardMaterial) {
+            if (childMaterial.transparent === false) {
+              child.castShadow = true;
+              child.receiveShadow = true;
+            }
+          }
+        }
+        if (child.material instanceof MeshStandardMaterial) {
+          child.material.envMapIntensity = 1;
+          child.material.needsUpdate = true;
+        }
+      }
+    });
+    const meshBox = new Box3().setFromObject(gltf.scene);
+    gltf.scene.position.y = -meshBox.min.y;
+    meshGroup.clear();
+    meshGroup.add(gltf.scene);
+  };
+
+  const loadResource = (resourceName: string, resource: string) => {
+    const lowerName = resourceName.toLowerCase();
+    if (lowerName.endsWith('.exr')) {
+      exrLoader.load(resource, (texture: Texture, _textureData: any) => {
+        const environmentMapTexture =
+          pmremGenerator.fromEquirectangular(texture).texture;
+        scene.background = environmentMapTexture;
+        scene.environment = environmentMapTexture;
+      });
+    } else if (lowerName.endsWith('.hdr')) {
+      rgbeLoader.load(resource, (texture: Texture, _textureData: any) => {
+        const environmentMapTexture =
+          pmremGenerator.fromEquirectangular(texture).texture;
+        scene.background = environmentMapTexture;
+        scene.environment = environmentMapTexture;
+      });
+    } else if (lowerName.endsWith('.glb') || lowerName.endsWith('.gltf')) {
+      void loadGLTF(resource);
+    }
+  };
+
+  setupDragDrop(
+    'holder',
+    'hover',
+    (file: File, event: ProgressEvent<FileReader>) => {
+      // @ts-ignore
+      loadResource(file.name, event.target.result);
+    }
+  );
+
   const render = () => {
     renderer.render(scene, camera);
   };
   requestAnimationFrame(animate);
+};
+
+const setupDragDrop = (
+  elementId: string,
+  className: string,
+  load: (file: File, event: ProgressEvent<FileReader>) => void
+) => {
+  const holder = document.getElementById(elementId);
+  if (!holder) {
+    return;
+  }
+  holder.ondragover = function () {
+    // @ts-ignore
+    this.className = className;
+    return false;
+  };
+  holder.ondragend = function () {
+    // @ts-ignore
+    this.className = '';
+    return false;
+  };
+  holder.ondrop = function (e) {
+    // @ts-ignore
+    this.className = '';
+    e.preventDefault();
+    // @ts-ignore
+    const file = e.dataTransfer.files[0];
+    const reader = new FileReader();
+    reader.onload = (event) => load(file, event);
+    reader.readAsDataURL(file);
+  };
 };
 
 const threeCanvas = document.getElementById('three_canvas');

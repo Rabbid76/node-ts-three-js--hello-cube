@@ -12,11 +12,27 @@
         margin: 0px;
         padding: 0px;
       }
+      #holder {
+        border: 10px dashed #ccc;
+        width: 150px;
+        height: 150px;
+        margin: 20px auto;
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        text-align: center;
+        vertical-align: middle;
+        font-family: Verdana;
+      }
+      #holder.hover {
+        border: 10px dashed #333;
+      }
     </style>
   </head>
 
   <body>
     <div id="container">
+      <div id="holder"><spawn>drag target<br />.exr / .hdr<br />.glb / .gltf</spawn></div>
       <canvas id="three_canvas"> </canvas>
     </div>
     <script type="module" src="bundle.js"></script>
