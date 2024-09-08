@@ -62,7 +62,7 @@ export const helloCube = (canvas: HTMLElement) => {
   const scene = new Scene();
   scene.background = new Color(0xc0c0c0);
   const pmremGenerator = new PMREMGenerator(renderer);
-  const roomEnvironment = new RoomEnvironment(renderer);
+  const roomEnvironment = new RoomEnvironment();
   const environmentTexture = pmremGenerator.fromScene(
     roomEnvironment,
     0.04
